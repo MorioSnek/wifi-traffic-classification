@@ -28,6 +28,8 @@ else:
 
 for c in ["wlan.sa","wlan.da","wlan.ta","wlan.ra"]:
     df_raw[c] = df_raw[c].astype(str).str.lower()
+df_raw["wlan_radio.snr"] = pd.to_numeric(df_raw["wlan_radio.snr"], errors="coerce")
+
 
 t_min = float(df_raw["frame.time_epoch"].min())
 t_max = float(df_raw["frame.time_epoch"].max())
@@ -111,6 +113,8 @@ agg = df.groupby(["win_id","direction"]).agg(
     len_var=("frame.len","var"),
     rssi_mean=("radiotap.dbm_antsignal","mean"),
     rssi_std=("radiotap.dbm_antsignal","std"),
+    snr_mean=("wlan_radio.snr","mean"),
+    snr_std =("wlan_radio.snr","std"),
 ).reset_index()
 
 # Inter-arrival times inside each window/direction
@@ -129,7 +133,10 @@ wide.columns = ["_".join(c).strip() for c in wide.columns.to_flat_index()]
 wide = wide.reset_index()
 
 # Derived (normalized by W)
-for base in ["pkts","bytes","len_mean","len_var","rssi_mean","rssi_std","iat_mean","iat_var"]:
+for base in ["pkts","bytes","len_mean","len_var",
+             "rssi_mean","rssi_std",
+             "snr_mean","snr_std",     # <<— aggiunte
+             "iat_mean","iat_var"]:
     for d in ["Uplink","Downlink"]:
         col = f"{base}_{d}"
         if col not in wide.columns: wide[col] = np.nan
@@ -281,6 +288,7 @@ ys      = [qos_frac[ac].values for ac in order]
 colors  = [color_map[ac]       for ac in order]
 labels  = [label_map[ac]       for ac in order]
 ax7.stackplot(x, *ys, labels=labels, colors=colors, alpha=0.95)
+shade_sleep_fraction(ax7)
 ax7.set_title(f"QoS Access Categories (W = {W} s)")
 ax7.set_xlabel("Relative time (s)")
 ax7.set_ylabel("Fraction of frames")
@@ -290,6 +298,18 @@ ax7.legend(loc="upper right", ncol=2, fontsize=9)
 ax7.grid(True, axis="y", alpha=0.3)
 fig7.tight_layout()
 fig7.savefig(f"./data/plot_qos_composition_W{W}.png", dpi=150)
+
+# SNR
+snr = wide["snr_mean_Uplink"].where(~wide["snr_mean_Uplink"].isna(), wide["snr_mean_Downlink"])
+fig8, ax8 = plt.subplots()
+ax8.plot(wide["t_rel_start"], snr, label="SNR")
+ax8.set_title("Signal-to-Noise Ratio")
+ax8.set_xlabel("Relative time (s)")
+ax8.set_ylabel("SNR (dB)")
+ax8.set_xlim(left=0, right=t_max - t0)
+ax8.set_ylim(bottom=0)
+ax8.legend(); ax8.grid(True); fig8.tight_layout()
+fig8.savefig(f"./data/plot_snr_W{W}.png", dpi=150)
 
 print("Plots saved in ./data")
 
