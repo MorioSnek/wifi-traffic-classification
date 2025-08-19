@@ -1,7 +1,7 @@
 # === Parameters ===
 W = 15    
 MY_MAC = "b4:96:a5:4c:b0:70"
-CSV_PATH = "../private/traffic.csv"
+CSV_PATH = "./private/traffic.csv"
 
 
 SLEEP_FRACTION_THRESHOLD = 0.6
@@ -160,7 +160,7 @@ ax1.set_ylabel("Throughput (Mb/s)")
 ax1.set_xlim(left=0)
 ax1.set_ylim(bottom=0)
 ax1.legend(); ax1.grid(True); fig1.tight_layout()
-fig1.savefig(f"../data/plot_throughput_W{W}.png", dpi=150)
+fig1.savefig(f"./data/plot_throughput_W{W}.png", dpi=150)
 
 # Packets per second
 fig2, ax2 = plt.subplots()
@@ -173,7 +173,7 @@ ax2.set_ylabel("Packets per second (pps)")
 ax2.set_xlim(left=0)
 ax2.set_ylim(bottom=0)
 ax2.legend(); ax2.grid(True); fig2.tight_layout()
-fig2.savefig(f"../data/plot_pps_W{W}.png", dpi=150)
+fig2.savefig(f"./data/plot_pps_W{W}.png", dpi=150)
 
 # Average packet size
 fig3, ax3 = plt.subplots()
@@ -186,7 +186,7 @@ ax3.set_ylabel("Average packet size (bytes)")
 ax3.set_xlim(left=0)
 ax3.set_ylim(bottom=0)
 ax3.legend(); ax3.grid(True); fig3.tight_layout()
-fig3.savefig(f"../data/plot_pkt_size_avg_W{W}.png", dpi=150)
+fig3.savefig(f"./data/plot_pkt_size_avg_W{W}.png", dpi=150)
 
 # Inter-arrival times
 fig4, ax4 = plt.subplots()
@@ -199,7 +199,7 @@ ax4.set_ylabel("Average inter-arrival time (s)")
 ax4.set_xlim(left=0)
 ax4.set_ylim(bottom=0)
 ax4.legend(); ax4.grid(True); fig4.tight_layout()
-fig4.savefig(f"../data/plot_iat_avg_W{W}.png", dpi=150)
+fig4.savefig(f"./data/plot_iat_avg_W{W}.png", dpi=150)
 
 fig5, ax5 = plt.subplots()
 ax5.plot(wide["t_rel_start"], wide["iat_var_Uplink"], label="Uplink")
@@ -211,7 +211,7 @@ ax5.set_ylabel("Variance (s^2)")
 ax5.set_xlim(left=0)
 ax5.set_ylim(bottom=0)
 ax5.legend(); ax5.grid(True); fig5.tight_layout()
-fig5.savefig(f"../data/plot_iat_var_W{W}.png", dpi=150)
+fig5.savefig(f"./data/plot_iat_var_W{W}.png", dpi=150)
 
 # RSSI
 rssi = wide["rssi_mean_Uplink"].where(~wide["rssi_mean_Uplink"].isna(), wide["rssi_mean_Downlink"])
@@ -221,6 +221,6 @@ ax6.set_title("Received Signal Strength Indicator (RSSI)")
 ax6.set_xlabel("Relative time (s)")
 ax6.set_ylabel("RSSI (dBm)")
 ax6.grid(True); fig6.tight_layout()
-fig6.savefig(f"../data/plot_rssi_W{W}.png", dpi=150)
+fig6.savefig(f"./data/plot_rssi_W{W}.png", dpi=150)
 
-print("Plots saved in ../data")
+print("Plots saved in ./data")
