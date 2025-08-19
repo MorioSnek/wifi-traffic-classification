@@ -51,6 +51,8 @@ wifi-traffic-classification/
 │   └── features_W15.pcapng
 │
 ├── src/
+│   ├── train.py
+│   ├── labeling.py
 │   └── plots.py
 │
 ├── private/
@@ -67,7 +69,7 @@ The folders respect the following logic:
 - `requirements.txt`: lists the Python packages required to run the project.
 
 ## Capture Processing
-I personally found it easier to convert the whole Wireshark capture file into a format that can be processed by pandas easily, in particular `.csv`. To do so, it's possible to use the `tshark` command-line tool that comes with Wireshark. The following command can be used to filter and copy certain information from a `.pcap` or `.pcapng` file to a `.csv`:
+I personally found it easier to convert the whole Wireshark capture file into a format that can be processed by pandas easily, in particular `.csv`. To do so, it's possible to use the `tshark` command-line tool that comes with Wireshark. The following command can be used to filter and copy various information from a `.pcap` or `.pcapng` file to a `.csv`:
 
 ```bash
 tshark -r ./private/capture.pcapng \
@@ -118,22 +120,85 @@ The traffic classes considered in this work are streaming, web browsing, idle, a
 For the first part, the plots generated provide initial insight regarding the RSSI and the SNR, just to be sure that the test is mostly valid. As plotted, the RSSI and the SNR are not only in the expected range, but also strictly correlated. This highlights the absence of noise during this experiment.
 ### Signal strenght
 
-| RSSI                  | SNR                   |
-| ----------------------------------- | ----------------------------------- |
-| ![ps](/img/plot_rssi_W15.png) | ![fps](/img/plot_snr_W15.png)   |
+| RSSI                          | SNR                           |
+| ----------------------------- | ----------------------------- |
+| ![ps](/img/plot_rssi_W15.png) | ![fps](/img/plot_snr_W15.png) |
 
 
 ### Throughput and Frames per second
 The plots regarding the frames captured all highlight in red the areas where the station transceiver was off most of the time.
 
-| Average frame size                  | Frames per second                   | Throughput                          |
-| ----------------------------------- | ----------------------------------- | ----------------------------------- |
-| ![ps](/img/plot_frame_size_avg_W15.png) | ![fps](/img/plot_fps_W15.png)   | ![thr](/img/plot_throughput_W15.png)  |
+| Average frame size                      | Frames per second                   | Throughput                           |
+| --------------------------------------- | ----------------------------------- | ------------------------------------ |
+| ![ps](/img/plot_frame_size_avg_W15.png) | ![fps](/img/plot_fps_W15.png)       | ![thr](/img/plot_throughput_W15.png) |
 
 Starting the analysis from frames per second, frame size, and their obvious consequence, throughput:
 
-- **Frames per second:** Strong peaks appear during active downlink traffic, especially when the station is awake. During sleep intervals (red shaded areas), the number of frames drops sharply, confirming reduced channel activity.
-
 - **Average frame size:** Downlink frames are generally much larger than uplink ones, with consistent sizes above 1,000 bytes during high-traffic periods, while uplink traffic remains small and stable.
 
+- **Frames per second:** Strong peaks appear during active downlink traffic, especially when the station is awake. During sleep intervals (red shaded areas), the number of frames drops sharply, confirming reduced channel activity.
+
 - **Throughput:** Traffic is heavily dominated by downlink, with bursts up to ~30 Mb/s in short intervals. During sleep phases, throughput collapses close to zero, showing the strong impact of power-saving states on data transfer.
+
+### Inter arrival times
+| Average IAT                         | IAT Variance                        |
+| ----------------------------------- | ----------------------------------- |
+| ![ps](/img/plot_iat_avg_W15.png)    | ![fps](/img/plot_iat_var_W15.png)   |
+
+The plots above show the average and variance of inter-arrival times for uplink and downlink traffic.
+- Both metrics are generally close to zero, indicating regular packet flows.
+- Occasional spikes (around 350–400s) correspond to bursts of inactivity followed by traffic resumption, which cause higher inter-arrival times and larger variance.
+- During predominantly sleeping periods, inter-arrival times remain low, as the station transmits very few packets.
+These metrics highlight the difference between steady high-throughput traffic and sporadic or bursty transmissions.
+
+### Quality of Service
+
+<div style="text-align: center;">
+<img src="./img/plot_qos_composition_W15.png" width="250" />
+</div>
+
+The plot illustrates the distribution of QoS access categories over time.
+- Best Effort (blue) dominates most of the capture, representing general web traffic.
+- Short intervals of Voice (red) and Video (orange) appear during higher activity phases (e.g., streaming), highlighting latency-sensitive traffic.
+- Background (green) traffic is sporadic and accounts for only small fractions.
+- The station tends to enter sleep states during Video traffic, while it almost never sleeps when Best Effort dominates.
+
+### Test Parameters
+```
+Train acc: 1.0
+Test  acc: 0.5454545454545454
+
+accuracy                               0.55        22
+macro avg          0.42      0.59      0.48        22
+weighted avg       0.39      0.55      0.45        22
+```
+
+The Random Forest achieved 100% training accuracy but only ~55% accuracy on the test set. 
+
+This indicates clear overfitting: the model memorized the training data but generalized poorly. The classification report also shows that some classes are rarely predicted, confirming class imbalance.
+
+This result could be improved by collecting more balanced data across all activities.
+
+
+
+### Confusion Matrix
+
+<div style="text-align: center;">
+<img src="./img/confusion_matrix_W15.png" width="250" />
+</div>
+
+The confusion matrix shows that the model is able to clearly distinguish streaming and speedtest sessions, which are recognized with high accuracy. 
+
+Web browsing and idle, on the other hand, present more overlap: some idle intervals are misclassified as web or streaming, and part of the web traffic is confused with both streaming and idle. 
+
+This outcome reflects the similarity of their traffic patterns, while more distinct behaviors like speedtest (high throughput bursts) and streaming (steady video flows) are easier to separate.
+
+## Authors and acknowledgment
+The author of this project is [Luca Moriondo](https://gitlab.com/MorioSnek). The project was developed as part of the Wireless Internet course at Politecnico di Milano. 
+
+Small parts of the code were inspired or taken from the Wireless Internet course at Politecnico di Milano, held by Prof. Alessandro Enrico Cesare Redondi.
+
+Development was assisted using Github Copilot, provided by Politecnico di Milano.
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
