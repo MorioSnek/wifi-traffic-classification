@@ -109,14 +109,12 @@ The traffic classes considered in this work are streaming, web browsing, idle, a
 ## Results
 For the first part, the plots generated provide initial insight regarding the RSSI and the SNR, just to be sure that the test is mostly valid. As plotted, the RSSI and the SNR are not only in the expected range, but also strictly correlated. This highlights the absence of noise during this experiment.
 ### Signal strenght
-![](/img/plot_rssi_W15.png)
-![](/img/plot_snr_W15.png)
+![](/img/plot_rssi_W15.png) ![](/img/plot_snr_W15.png)
 
 ### Throughput and Frames per second
 The plots regarding the frames captured all highlight in red the areas where the station transceiver was off most of the time.
 
-![](/img/plot_fps_W15.png)
-![](/img/plot_frame_size_avg_W15.png)
+![](/img/plot_fps_W15.png) ![](/img/plot_frame_size_avg_W15.png) ![](/img/plot_throughput_W15.png)
 
 Starting the analysis from frames per second, frame size, and their obvious consequence, throughput:
 
