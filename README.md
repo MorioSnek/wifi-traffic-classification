@@ -66,7 +66,7 @@ I personally found it easier to convert the whole Wireshark capture file into a 
 
 ```bash
 tshark -r ./private/capture.pcapng \
-  -Y "wlan.addr == AA:BB:CC:DD:EE:FF" \
+  -Y "wlan.addr == XX:XX:XX:XX:XX:XX && wlan.fc.type=2" \
   -T fields -E header=y -E separator=, -E quote=d \
   -e frame.time_epoch \
   -e frame.len \
@@ -74,6 +74,29 @@ tshark -r ./private/capture.pcapng \
   -e wlan.fc.type -e wlan.fc.subtype \
   -e wlan.fc.pwrmgt \
   -e radiotap.dbm_antsignal \
+  -e wlan.qos.priority \
 > ./private/traffic.csv
 ```
 
+### Classical analysis
+The first part of this project focuses on classical traffic analysis without machine learning.
+The script src/plots.py processes the CSV exported with tshark and computes several statistical features of Wi-Fi traffic for a given station MAC address.
+
+Specifically, the script:
+- Splits the traffic into fixed-size time windows (default: 15 seconds).
+- Separates uplink and downlink packets.
+- Computes per-window features:
+    - RSSI [dBm]
+    - Throughput [Mb/s]
+    - Packets per second [PPS]
+    - Average and variance of packet size
+    - Average and variance of inter-arrival time
+    - Quality of Service (QoS) distribution
+- Extracts the Power Management bit to determine when the station is in sleep or awake mode, highlighting sleep periods in the plots.
+- Produces time-series plots of all the above features, saved as .png images in the data/ folder.
+
+This step provides a feature extraction and visualization pipeline that will serve as the foundation for the next stage, where machine learning techniques will be applied to classify user activities from encrypted Wi-Fi traffic.
+
+### Machine Learning Approach
+
+## Results

@@ -148,6 +148,43 @@ def shade_sleep_fraction(ax):
     for _, row in sw.iterrows():
         ax.axvspan(row["t_rel_start"], row["t_rel_end"], color=SHADE_COLOR, alpha=SHADE_ALPHA, linewidth=0)
 
+def _tid_to_ac(tid: int) -> str:
+    if tid in (6, 7):   return "AC_VO"
+    if tid in (4, 5):   return "AC_VI"
+    if tid in (0, 3):   return "AC_BE"
+    if tid in (1, 2):   return "AC_BK"
+    return "AC_BE"
+
+def compute_qos_fractions(df: pd.DataFrame, win_map: pd.DataFrame) -> pd.DataFrame:
+    qos = df.copy()
+    qos["wlan.qos.priority"] = pd.to_numeric(qos["wlan.qos.priority"], errors="coerce")
+    qos = qos.dropna(subset=["wlan.qos.priority"])
+    qos["tid"] = qos["wlan.qos.priority"].astype(int)
+    qos["ac"] = qos["tid"].map(_tid_to_ac)
+
+    counts = (
+        qos.groupby(["win_id", "ac"])["frame.len"]
+           .count()
+           .rename("pkts")
+           .reset_index()
+    )
+
+    wide_qos = counts.pivot(index="win_id", columns="ac", values="pkts").fillna(0.0)
+    wide_qos = wide_qos.merge(win_map[["win_id","t_rel_start"]], on="win_id", how="left")
+    wide_qos = wide_qos.sort_values("t_rel_start")
+
+    order = ["AC_BE", "AC_BK", "AC_VI", "AC_VO"]
+    for ac in order:
+        if ac not in wide_qos.columns:
+            wide_qos[ac] = 0.0
+
+    total = wide_qos[order].sum(axis=1).replace(0, np.nan)
+    frac = wide_qos.copy()
+    for ac in order:
+        frac[ac] = wide_qos[ac] / total
+
+    return frac[["win_id", "t_rel_start"] + order]
+
 # Plots
 # Throughput
 fig1, ax1 = plt.subplots()
@@ -162,31 +199,31 @@ ax1.set_ylim(bottom=0)
 ax1.legend(); ax1.grid(True); fig1.tight_layout()
 fig1.savefig(f"./data/plot_throughput_W{W}.png", dpi=150)
 
-# Packets per second
+# Frames per second
 fig2, ax2 = plt.subplots()
 ax2.plot(wide["t_rel_start"], wide["pps_Uplink"]*W, label="Uplink")
 ax2.plot(wide["t_rel_start"], wide["pps_Downlink"]*W, label="Downlink")
 shade_sleep_fraction(ax2)
-ax2.set_title(f"Packets per second per window (W = {W} s)")
+ax2.set_title(f"Frames per second per window (W = {W} s)")
 ax2.set_xlabel("Relative time (s)")
-ax2.set_ylabel("Packets per second (pps)")
+ax2.set_ylabel("Frames per second (fps)")
 ax2.set_xlim(left=0)
 ax2.set_ylim(bottom=0)
 ax2.legend(); ax2.grid(True); fig2.tight_layout()
-fig2.savefig(f"./data/plot_pps_W{W}.png", dpi=150)
+fig2.savefig(f"./data/plot_fps_W{W}.png", dpi=150)
 
-# Average packet size
+# Average frame size
 fig3, ax3 = plt.subplots()
 ax3.plot(wide["t_rel_start"], wide["len_mean_Uplink"], label="Uplink")
 ax3.plot(wide["t_rel_start"], wide["len_mean_Downlink"], label="Downlink")
 shade_sleep_fraction(ax3)
-ax3.set_title(f"Average packet size per window (W = {W} s)")
+ax3.set_title(f"Average frame size per window (W = {W} s)")
 ax3.set_xlabel("Relative time (s)")
-ax3.set_ylabel("Average packet size (bytes)")
+ax3.set_ylabel("Average frame size (bytes)")
 ax3.set_xlim(left=0)
 ax3.set_ylim(bottom=0)
 ax3.legend(); ax3.grid(True); fig3.tight_layout()
-fig3.savefig(f"./data/plot_pkt_size_avg_W{W}.png", dpi=150)
+fig3.savefig(f"./data/plot_frame_size_avg_W{W}.png", dpi=150)
 
 # Inter-arrival times
 fig4, ax4 = plt.subplots()
@@ -223,4 +260,36 @@ ax6.set_ylabel("RSSI (dBm)")
 ax6.grid(True); fig6.tight_layout()
 fig6.savefig(f"./data/plot_rssi_W{W}.png", dpi=150)
 
+# QoS
+qos_frac = compute_qos_fractions(df, win_map)
+fig7, ax7 = plt.subplots()
+x = qos_frac["t_rel_start"].values
+order = ["AC_VO", "AC_VI", "AC_BK", "AC_BE"]
+color_map = {
+    "AC_VO": "#e57373",
+    "AC_VI": "#ffb74d",
+    "AC_BK": "#b2dfdb",
+    "AC_BE": "#90caf9",
+}
+label_map = {
+    "AC_VO": "Voice",
+    "AC_VI": "Video",
+    "AC_BK": "Background",
+    "AC_BE": "Best Effort",
+}
+ys      = [qos_frac[ac].values for ac in order]
+colors  = [color_map[ac]       for ac in order]
+labels  = [label_map[ac]       for ac in order]
+ax7.stackplot(x, *ys, labels=labels, colors=colors, alpha=0.95)
+ax7.set_title(f"QoS Access Categories (W = {W} s)")
+ax7.set_xlabel("Relative time (s)")
+ax7.set_ylabel("Fraction of frames")
+ax7.set_xlim(left=0, right=t_max - t0)   # finisce dove finisce la cattura
+ax7.set_ylim(bottom=0, top=1)
+ax7.legend(loc="upper right", ncol=2, fontsize=9)
+ax7.grid(True, axis="y", alpha=0.3)
+fig7.tight_layout()
+fig7.savefig(f"./data/plot_qos_composition_W{W}.png", dpi=150)
+
 print("Plots saved in ./data")
+
