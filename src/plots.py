@@ -182,7 +182,7 @@ lineplot(x,
          ["Uplink","Downlink"],
          f"Throughput per window (W = {W} s)",
          "Throughput (Mb/s)",
-         f"./data/plot_throughput_W{W}.png",
+         f"./img/plot_throughput_W{W}.png",
          ylim0=True, x_end=x_end)
 
 lineplot(x,
@@ -190,7 +190,7 @@ lineplot(x,
          ["Uplink","Downlink"],
          f"Frames per second per window (W = {W} s)",
          "Frames per second (fps)",
-         f"./data/plot_fps_W{W}.png",
+         f"./img/plot_fps_W{W}.png",
          ylim0=True, x_end=x_end)
 
 lineplot(x,
@@ -198,7 +198,7 @@ lineplot(x,
          ["Uplink","Downlink"],
          f"Average frame size per window (W = {W} s)",
          "Average frame size (bytes)",
-         f"./data/plot_frame_size_avg_W{W}.png",
+         f"./img/plot_frame_size_avg_W{W}.png",
          ylim0=True, x_end=x_end)
 
 lineplot(x,
@@ -206,7 +206,7 @@ lineplot(x,
          ["Uplink","Downlink"],
          f"Average inter-arrival time per window (W = {W} s)",
          "Average inter-arrival time (s)",
-         f"./data/plot_iat_avg_W{W}.png",
+         f"./img/plot_iat_avg_W{W}.png",
          ylim0=True, x_end=x_end)
 
 lineplot(x,
@@ -214,7 +214,7 @@ lineplot(x,
          ["Uplink","Downlink"],
          f"Variance of inter-arrival time per window (W = {W} s)",
          "Variance (s^2)",
-         f"./data/plot_iat_var_W{W}.png",
+         f"./img/plot_iat_var_W{W}.png",
          ylim0=True, x_end=x_end)
 
 # RSSI
@@ -223,7 +223,7 @@ fig, ax = plt.subplots()
 ax.plot(x, rssi, label="RSSI"); ax.set_title("Received Signal Strength Indicator (RSSI)")
 ax.set_xlabel("Relative time (s)"); ax.set_ylabel("RSSI (dBm)")
 ax.set_xlim(left=0, right=x_end); ax.grid(True); fig.tight_layout()
-fig.savefig(f"./data/plot_rssi_W{W}.png", dpi=150)
+fig.savefig(f"./img/plot_rssi_W{W}.png", dpi=150)
 
 # QoS stack
 order = ["AC_VO","AC_VI","AC_BK","AC_BE"]
@@ -239,7 +239,7 @@ ax.set_title(f"QoS Access Categories (W = {W} s)")
 ax.set_xlabel("Relative time (s)"); ax.set_ylabel("Fraction of frames")
 ax.set_xlim(left=0, right=x_end); ax.set_ylim(0,1)
 ax.legend(loc="upper right", ncol=2, fontsize=9); ax.grid(True, axis="y", alpha=0.3)
-fig.tight_layout(); fig.savefig(f"./data/plot_qos_composition_W{W}.png", dpi=150)
+fig.tight_layout(); fig.savefig(f"./img/plot_qos_composition_W{W}.png", dpi=150)
 
 # SNR
 snr = wide["snr_mean_Uplink"].where(~wide["snr_mean_Uplink"].isna(), wide["snr_mean_Downlink"])
@@ -248,6 +248,6 @@ ax.plot(x, snr, label="SNR"); ax.set_title("Signal-to-Noise Ratio")
 ax.set_xlabel("Relative time (s)"); ax.set_ylabel("SNR (dB)")
 ax.set_xlim(left=0, right=x_end); ax.set_ylim(bottom=0)
 ax.legend(); ax.grid(True); fig.tight_layout()
-fig.savefig(f"./data/plot_snr_W{W}.png", dpi=150)
+fig.savefig(f"./img/plot_snr_W{W}.png", dpi=150)
 
-print("Plots saved in ./data")
+print("Plots saved in ./img")

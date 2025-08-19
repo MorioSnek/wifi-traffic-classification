@@ -1,5 +1,5 @@
 FEAT_IN = "./model/features_labeled_W15.csv"
-CM_OUT = "./data/confusion_matrix_W15.png"
+CM_OUT = "./img/confusion_matrix_W15.png"
 
 TEST_SIZE = 0.40
 RANDOM_STATE = 42
