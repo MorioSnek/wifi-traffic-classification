@@ -178,7 +178,7 @@ x = wide["t_rel_start"].values
 x_end = t_max - t0
 
 lineplot(x,
-         [wide["mbps_Uplink"]*W, wide["mbps_Downlink"]*W],
+         [wide["mbps_Uplink"], wide["mbps_Downlink"]],
          ["Uplink","Downlink"],
          f"Throughput per window (W = {W} s)",
          "Throughput (Mb/s)",
@@ -186,7 +186,7 @@ lineplot(x,
          ylim0=True, x_end=x_end)
 
 lineplot(x,
-         [wide["pps_Uplink"]*W, wide["pps_Downlink"]*W],
+         [wide["pps_Uplink"], wide["pps_Downlink"]],
          ["Uplink","Downlink"],
          f"Frames per second per window (W = {W} s)",
          "Frames per second (fps)",

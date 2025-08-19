@@ -40,14 +40,22 @@ wifi-traffic-classification/
 │   ├── plot_pkt_size_avg_W15.png
 │   ├── plot_pps_W15.png
 │   ├── plot_rssi_W15.png
+│   ├── plot_snr_W15.png
+│   ├── plot_qos_composition_W15.png
+│   ├── confusion_matrix_W15.png
 │   └── plot_throughput_W15.png
+│
+├── model/
+│   ├── features_labeled_W15.csv
+│   ├── labels_by_time_W15.csv
+│   └── features_W15.pcapng
+│
+├── src/
+│   └── plots.py
 │
 ├── private/
 │   ├── traffic.csv
 │   └── capture.pcapng
-│
-├── src/
-│   └── plots.py
 │
 └── requirements.txt
 ```
@@ -72,7 +80,7 @@ tshark -r ./private/capture.pcapng \
   -e wlan.fc.pwrmgt \
   -e radiotap.dbm_antsignal \
   -e wlan.qos.priority \
-  -e 
+  -e wlan_radio.snr \
 > ./private/traffic.csv
 ```
 
@@ -109,12 +117,18 @@ The traffic classes considered in this work are streaming, web browsing, idle, a
 ## Results
 For the first part, the plots generated provide initial insight regarding the RSSI and the SNR, just to be sure that the test is mostly valid. As plotted, the RSSI and the SNR are not only in the expected range, but also strictly correlated. This highlights the absence of noise during this experiment.
 ### Signal strenght
-![](/img/plot_rssi_W15.png) ![](/img/plot_snr_W15.png)
+
+| RSSI                  | SNR                   |
+| ----------------------------------- | ----------------------------------- |
+| ![ps](/img/plot_rssi_W15.png) | ![fps](/img/plot_snr_W15.png)   |
+
 
 ### Throughput and Frames per second
 The plots regarding the frames captured all highlight in red the areas where the station transceiver was off most of the time.
 
-![](/img/plot_fps_W15.png) ![](/img/plot_frame_size_avg_W15.png) ![](/img/plot_throughput_W15.png)
+| Average frame size                  | Frames per second                   | Throughput                          |
+| ----------------------------------- | ----------------------------------- | ----------------------------------- |
+| ![ps](/img/plot_frame_size_avg_W15.png) | ![fps](/img/plot_fps_W15.png)   | ![thr](/img/plot_throughput_W15.png)  |
 
 Starting the analysis from frames per second, frame size, and their obvious consequence, throughput:
 
@@ -122,5 +136,4 @@ Starting the analysis from frames per second, frame size, and their obvious cons
 
 - **Average frame size:** Downlink frames are generally much larger than uplink ones, with consistent sizes above 1,000 bytes during high-traffic periods, while uplink traffic remains small and stable.
 
-- **Throughput:** Traffic is heavily dominated by downlink, with bursts up to ~500 Mb/s in short intervals. During sleep phases, throughput collapses close to zero, showing the strong impact of power-saving states on data transfer.
-
+- **Throughput:** Traffic is heavily dominated by downlink, with bursts up to ~30 Mb/s in short intervals. During sleep phases, throughput collapses close to zero, showing the strong impact of power-saving states on data transfer.
