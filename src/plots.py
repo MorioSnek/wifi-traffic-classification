@@ -1,315 +1,253 @@
-# === Parameters ===
-W = 15    
-MY_MAC = "b4:96:a5:4c:b0:70"
+# Params
+W = 15
+MY_MAC = "b2:09:6d:5b:24:7d"
 CSV_PATH = "./private/traffic.csv"
-
 
 SLEEP_FRACTION_THRESHOLD = 0.6
 SHADE_COLOR = "#e57373"
 SHADE_ALPHA = 0.18
 
-
-# === Imports ===
+# Imports
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Load CSV
+# Load
 df_raw = pd.read_csv(CSV_PATH)
+num = lambda s: pd.to_numeric(s, errors="coerce")
 
-# Types & normalization
-df_raw["frame.time_epoch"] = pd.to_numeric(df_raw["frame.time_epoch"], errors="coerce")
-df_raw["frame.len"] = pd.to_numeric(df_raw["frame.len"], errors="coerce")
-df_raw["wlan.fc.type"] = pd.to_numeric(df_raw["wlan.fc.type"], errors="coerce")
-if "wlan.fc.pwrmgt" in df_raw.columns:
-    df_raw["wlan.fc.pwrmgt"] = pd.to_numeric(df_raw["wlan.fc.pwrmgt"], errors="coerce").fillna(0).astype(int)
-else:
-    df_raw["wlan.fc.pwrmgt"] = 0
+df_raw["frame.time_epoch"] = num(df_raw["frame.time_epoch"])
+df_raw["frame.len"] = num(df_raw["frame.len"])
+df_raw["wlan.fc.type"] = num(df_raw["wlan.fc.type"])
+df_raw["wlan.fc.pwrmgt"] = num(df_raw.get("wlan.fc.pwrmgt", 0)).fillna(0).astype(int)
+df_raw["wlan_radio.snr"] = num(df_raw.get("wlan_radio.snr", np.nan))
 
 for c in ["wlan.sa","wlan.da","wlan.ta","wlan.ra"]:
     df_raw[c] = df_raw[c].astype(str).str.lower()
-df_raw["wlan_radio.snr"] = pd.to_numeric(df_raw["wlan_radio.snr"], errors="coerce")
-
 
 t_min = float(df_raw["frame.time_epoch"].min())
 t_max = float(df_raw["frame.time_epoch"].max())
 
-# Build non-windowed awake/sleep intervals
-uplink_all = df_raw[(df_raw["wlan.sa"] == MY_MAC) | (df_raw["wlan.ta"] == MY_MAC)].copy()
-uplink_all = uplink_all.sort_values("frame.time_epoch")
-uplink_all["state"] = uplink_all["wlan.fc.pwrmgt"].clip(0,1).astype(int)  # 0=awake, 1=sleep
-
-# Compress into runs of constant state
-uplink_all["chg"] = uplink_all["state"].ne(uplink_all["state"].shift(1)).cumsum()
-runs = (
-    uplink_all.groupby("chg")
-              .agg(state=("state","last"),
-                   start=("frame.time_epoch","min"),
-                   end=("frame.time_epoch","max"))
-              .reset_index(drop=True)
-)
-
+# Sleep
+upl = df_raw[(df_raw["wlan.sa"] == MY_MAC) | (df_raw["wlan.ta"] == MY_MAC)].copy()
+upl = upl.sort_values("frame.time_epoch")
+upl["state"] = upl["wlan.fc.pwrmgt"].clip(0,1).astype(int)      # 0=awake, 1=sleep
+upl["grp"] = upl["state"].ne(upl["state"].shift()).cumsum()
+runs = (upl.groupby("grp")
+          .agg(state=("state","last"), start=("frame.time_epoch","min"), end=("frame.time_epoch","max"))
+          .reset_index(drop=True))
 if not runs.empty:
-    runs["next_start"] = runs["start"].shift(-1)
-    runs.loc[runs.index[:-1], "end"] = runs.loc[runs.index[:-1], "next_start"]
-    runs = runs.drop(columns=["next_start"])
-
-    # Make sure the very first run starts at t_min and the last ends at t_max
     runs.loc[runs.index[0], "start"] = t_min
     runs.loc[runs.index[-1], "end"] = t_max
+    nxt = runs["start"].shift(-1)
+    runs.loc[runs.index[:-1], "end"] = nxt.iloc[:-1].values
 
-# Sleep fraction per window
-win_start_abs = np.arange(np.floor(t_min / W)*W, np.ceil(t_max / W)*W, W)
-win_id = np.arange(len(win_start_abs))
-win_map = pd.DataFrame({
-    "win_id": win_id,
-    "t_abs_start": win_start_abs,
-    "t_abs_end": win_start_abs + W
-})
-t0 = float(win_map["t_abs_start"].min())
-win_map["t_rel_start"] = win_map["t_abs_start"] - t0
-win_map["t_rel_end"]   = win_map["t_abs_end"]   - t0
+# Window grid
+grid = np.arange(np.floor(t_min/W)*W, np.ceil(t_max/W)*W, W)
+win = pd.DataFrame({"win_id": np.arange(len(grid)),
+                    "t_abs_start": grid,
+                    "t_abs_end": grid + W})
+t0 = float(win["t_abs_start"].min())
+win["t_rel_start"] = win["t_abs_start"] - t0
+win["t_rel_end"]   = win["t_abs_end"]   - t0
 
-sleep_time = np.zeros(len(win_map), dtype=float)
-if not runs.empty:
-    # Iterate only over sleep intervals
-    for _, r in runs[runs["state"] == 1].iterrows():
-        s = r["start"] - t0
-        e = r["end"]   - t0
-        if e <= win_map["t_rel_start"].iloc[0] or s >= win_map["t_rel_end"].iloc[-1]:
-            continue
-        # Map to window indices
-        i0 = max(0, int(np.floor(s / W)))
-        i1 = min(len(win_map) - 1, int(np.floor((e - 1e-9) / W)))
-        for i in range(i0, i1 + 1):
-            ws, we = win_map.loc[i, ["t_rel_start","t_rel_end"]]
-            overlap = max(0.0, min(e, we) - max(s, ws))
-            sleep_time[i] += overlap
+# sleep_time per window
+sleep_time = np.zeros(len(win))
+for _, r in runs[runs["state"]==1].iterrows():
+    s, e = r["start"] - t0, r["end"] - t0
+    i0 = max(0, int(np.floor(s / W)))
+    i1 = min(len(win)-1, int(np.floor((e - 1e-9) / W)))
+    for i in range(i0, i1+1):
+        ws, we = win.loc[i, ["t_rel_start","t_rel_end"]]
+        sleep_time[i] += max(0.0, min(e, we) - max(s, ws))
+sleep = win[["win_id","t_rel_start","t_rel_end"]].copy()
+sleep["sleep_fraction"] = sleep_time / W
 
-sleep_windows = win_map.copy()
-sleep_windows["sleep_time"] = sleep_time
-sleep_windows["sleep_fraction"] = sleep_windows["sleep_time"] / W
-
-# Features per window
+# Select data frames & direction
 df = df_raw[df_raw["wlan.fc.type"] == 2].copy()
-
-is_up = (df["wlan.sa"] == MY_MAC) | (df["wlan.ta"] == MY_MAC)
+is_up   = (df["wlan.sa"] == MY_MAC) | (df["wlan.ta"] == MY_MAC)
 is_down = (df["wlan.da"] == MY_MAC) | (df["wlan.ra"] == MY_MAC)
 df = df[is_up | is_down].copy()
 df["direction"] = np.where(is_up, "Uplink", "Downlink")
 
-# Assign win_id using absolute start grid above
+df["t_rel"] = df["frame.time_epoch"] - t0
 df["win_id"] = pd.cut(
-    df["frame.time_epoch"] - t0,
-    bins=np.r_[win_map["t_rel_start"].values, win_map["t_rel_end"].values[-1]],
-    right=False, labels=win_id
+    df["t_rel"], bins=np.r_[win["t_rel_start"].values, win["t_rel_end"].values[-1]],
+    right=False, labels=win["win_id"].values
 ).astype(int)
 
-# Aggregate
-agg = df.groupby(["win_id","direction"]).agg(
-    pkts=("frame.len","count"),
-    bytes=("frame.len","sum"),
-    len_mean=("frame.len","mean"),
-    len_var=("frame.len","var"),
-    rssi_mean=("radiotap.dbm_antsignal","mean"),
-    rssi_std=("radiotap.dbm_antsignal","std"),
-    snr_mean=("wlan_radio.snr","mean"),
-    snr_std =("wlan_radio.snr","std"),
-).reset_index()
+# Per-window features
+for c in ["radiotap.dbm_antsignal", "wlan_radio.snr"]:
+    if c not in df.columns: df[c] = np.nan
 
-# Inter-arrival times inside each window/direction
+agg = (df.groupby(["win_id","direction"])
+         .agg(pkts=("frame.len","count"),
+              bytes=("frame.len","sum"),
+              len_mean=("frame.len","mean"),
+              len_var=("frame.len","var"),
+              rssi_mean=("radiotap.dbm_antsignal","mean"),
+              rssi_std=("radiotap.dbm_antsignal","std"),
+              snr_mean=("wlan_radio.snr","mean"),
+              snr_std=("wlan_radio.snr","std"))
+         .reset_index())
+
 dfs = df.sort_values(["win_id","direction","frame.time_epoch"]).copy()
 dfs["iat"] = dfs.groupby(["win_id","direction"])["frame.time_epoch"].diff()
-iat = (dfs.loc[dfs["iat"] > 0]
+iat = (dfs.loc[dfs["iat"]>0]
          .groupby(["win_id","direction"])["iat"]
          .agg(iat_mean="mean", iat_var="var")
          .reset_index())
 
 feat = agg.merge(iat, on=["win_id","direction"], how="left")
 
-# Wide
 wide = feat.pivot(index="win_id", columns="direction")
 wide.columns = ["_".join(c).strip() for c in wide.columns.to_flat_index()]
 wide = wide.reset_index()
 
-# Derived (normalized by W)
-for base in ["pkts","bytes","len_mean","len_var",
-             "rssi_mean","rssi_std",
-             "snr_mean","snr_std",     # <<— aggiunte
-             "iat_mean","iat_var"]:
+for base in ["pkts","bytes","len_mean","len_var","rssi_mean","rssi_std","snr_mean","snr_std","iat_mean","iat_var"]:
     for d in ["Uplink","Downlink"]:
         col = f"{base}_{d}"
         if col not in wide.columns: wide[col] = np.nan
 
-wide["pps_Uplink"] = wide["pkts_Uplink"] / W
+wide["pps_Uplink"]   = wide["pkts_Uplink"]   / W
 wide["pps_Downlink"] = wide["pkts_Downlink"] / W
-wide["mbps_Uplink"] = (8 * wide["bytes_Uplink"]) / (W * 1e6)
-wide["mbps_Downlink"] = (8 * wide["bytes_Downlink"]) / (W * 1e6)
+wide["mbps_Uplink"]  = (8 * wide["bytes_Uplink"])  / (W * 1e6)
+wide["mbps_Downlink"]= (8 * wide["bytes_Downlink"])/ (W * 1e6)
 
-# Join time axis
-wide = wide.merge(win_map[["win_id","t_rel_start"]], on="win_id", how="left").sort_values("t_rel_start")
+wide = wide.merge(win[["win_id","t_rel_start"]], on="win_id", how="left").sort_values("t_rel_start")
 
-# Shading
-def shade_sleep_fraction(ax):
-    sw = sleep_windows[sleep_windows["sleep_fraction"] >= SLEEP_FRACTION_THRESHOLD]
-    for _, row in sw.iterrows():
-        ax.axvspan(row["t_rel_start"], row["t_rel_end"], color=SHADE_COLOR, alpha=SHADE_ALPHA, linewidth=0)
-
-def _tid_to_ac(tid: int) -> str:
-    if tid in (6, 7):   return "AC_VO"
-    if tid in (4, 5):   return "AC_VI"
-    if tid in (0, 3):   return "AC_BE"
-    if tid in (1, 2):   return "AC_BK"
+# QoS fractions
+def tid2ac(tid: int) -> str:
+    if tid in (6,7):  return "AC_VO"
+    if tid in (4,5):  return "AC_VI"
+    if tid in (1,2):  return "AC_BK"
     return "AC_BE"
 
-def compute_qos_fractions(df: pd.DataFrame, win_map: pd.DataFrame) -> pd.DataFrame:
-    qos = df.copy()
-    qos["wlan.qos.priority"] = pd.to_numeric(qos["wlan.qos.priority"], errors="coerce")
-    qos = qos.dropna(subset=["wlan.qos.priority"])
-    qos["tid"] = qos["wlan.qos.priority"].astype(int)
-    qos["ac"] = qos["tid"].map(_tid_to_ac)
+qos = df.dropna(subset=["wlan.qos.priority"]).copy()
+qos["tid"] = qos["wlan.qos.priority"].astype(int)
+qos["ac"]  = qos["tid"].map(tid2ac)
+qcnt = (qos.groupby(["win_id","ac"])["frame.len"].count().rename("pkts").reset_index())
+qwide = qcnt.pivot(index="win_id", columns="ac", values="pkts").fillna(0.0)
+for ac in ["AC_BE","AC_BK","AC_VI","AC_VO"]:
+    if ac not in qwide.columns: qwide[ac] = 0.0
+qwide = qwide.reset_index()
+tot = qwide[["AC_BE","AC_BK","AC_VI","AC_VO"]].sum(axis=1).replace(0, np.nan)
+qfrac = qwide.copy()
+for ac in ["AC_BE","AC_BK","AC_VI","AC_VO"]:
+    qfrac[ac] = qwide[ac] / tot
+qfrac = qfrac.merge(win[["win_id","t_rel_start"]], on="win_id", how="left").sort_values("t_rel_start")
 
-    counts = (
-        qos.groupby(["win_id", "ac"])["frame.len"]
-           .count()
-           .rename("pkts")
-           .reset_index()
-    )
+# Tools
+def shade(ax):
+    for _, r in sleep[sleep["sleep_fraction"]>=SLEEP_FRACTION_THRESHOLD].iterrows():
+        ax.axvspan(r["t_rel_start"], r["t_rel_end"], color=SHADE_COLOR, alpha=SHADE_ALPHA, linewidth=0)
 
-    wide_qos = counts.pivot(index="win_id", columns="ac", values="pkts").fillna(0.0)
-    wide_qos = wide_qos.merge(win_map[["win_id","t_rel_start"]], on="win_id", how="left")
-    wide_qos = wide_qos.sort_values("t_rel_start")
+def lineplot(x, ys, labels, title, ylab, path, ylim0=True, x_end=None):
+    fig, ax = plt.subplots()
+    for y, lab in zip(ys, labels): ax.plot(x, y, label=lab)
+    shade(ax)
+    ax.set_title(title)
+    ax.set_xlabel("Relative time (s)")
+    ax.set_ylabel(ylab)
+    ax.set_xlim(left=0, right=x_end)
+    if ylim0: ax.set_ylim(bottom=0)
+    ax.legend(); ax.grid(True); fig.tight_layout(); fig.savefig(path, dpi=150)
 
-    order = ["AC_BE", "AC_BK", "AC_VI", "AC_VO"]
-    for ac in order:
-        if ac not in wide_qos.columns:
-            wide_qos[ac] = 0.0
+# Export features for ML
+qos_feats = qfrac.rename(columns={
+    "AC_BE":"qos_frac_BE","AC_BK":"qos_frac_BK","AC_VI":"qos_frac_VI","AC_VO":"qos_frac_VO"
+})[["win_id","qos_frac_BE","qos_frac_BK","qos_frac_VI","qos_frac_VO"]]
 
-    total = wide_qos[order].sum(axis=1).replace(0, np.nan)
-    frac = wide_qos.copy()
-    for ac in order:
-        frac[ac] = wide_qos[ac] / total
+features = wide[[
+    "win_id","t_rel_start",
+    "mbps_Uplink","mbps_Downlink",
+    "pps_Uplink","pps_Downlink",
+    "len_mean_Uplink","len_mean_Downlink",
+    "iat_mean_Uplink","iat_mean_Downlink",
+    "iat_var_Uplink","iat_var_Downlink",
+    "rssi_mean_Uplink","rssi_mean_Downlink",
+    "snr_mean_Uplink","snr_mean_Downlink"
+]].merge(sleep[["win_id","sleep_fraction"]], on="win_id", how="left") \
+ .merge(qos_feats, on="win_id", how="left") \
+ .fillna(0.0)
 
-    return frac[["win_id", "t_rel_start"] + order]
+features.to_csv("./model/features_W15.csv", index=False)
 
-# Plots
-# Throughput
-fig1, ax1 = plt.subplots()
-ax1.plot(wide["t_rel_start"], wide["mbps_Uplink"]*W, label="Uplink")
-ax1.plot(wide["t_rel_start"], wide["mbps_Downlink"]*W, label="Downlink")
-shade_sleep_fraction(ax1)
-ax1.set_title(f"Throughput per window (W = {W} s)")
-ax1.set_xlabel("Relative time (s)")
-ax1.set_ylabel("Throughput (Mb/s)")
-ax1.set_xlim(left=0)
-ax1.set_ylim(bottom=0)
-ax1.legend(); ax1.grid(True); fig1.tight_layout()
-fig1.savefig(f"./data/plot_throughput_W{W}.png", dpi=150)
+# ---------- Plots ----------
+x = wide["t_rel_start"].values
+x_end = t_max - t0
 
-# Frames per second
-fig2, ax2 = plt.subplots()
-ax2.plot(wide["t_rel_start"], wide["pps_Uplink"]*W, label="Uplink")
-ax2.plot(wide["t_rel_start"], wide["pps_Downlink"]*W, label="Downlink")
-shade_sleep_fraction(ax2)
-ax2.set_title(f"Frames per second per window (W = {W} s)")
-ax2.set_xlabel("Relative time (s)")
-ax2.set_ylabel("Frames per second (fps)")
-ax2.set_xlim(left=0)
-ax2.set_ylim(bottom=0)
-ax2.legend(); ax2.grid(True); fig2.tight_layout()
-fig2.savefig(f"./data/plot_fps_W{W}.png", dpi=150)
+lineplot(x,
+         [wide["mbps_Uplink"]*W, wide["mbps_Downlink"]*W],
+         ["Uplink","Downlink"],
+         f"Throughput per window (W = {W} s)",
+         "Throughput (Mb/s)",
+         f"./data/plot_throughput_W{W}.png",
+         ylim0=True, x_end=x_end)
 
-# Average frame size
-fig3, ax3 = plt.subplots()
-ax3.plot(wide["t_rel_start"], wide["len_mean_Uplink"], label="Uplink")
-ax3.plot(wide["t_rel_start"], wide["len_mean_Downlink"], label="Downlink")
-shade_sleep_fraction(ax3)
-ax3.set_title(f"Average frame size per window (W = {W} s)")
-ax3.set_xlabel("Relative time (s)")
-ax3.set_ylabel("Average frame size (bytes)")
-ax3.set_xlim(left=0)
-ax3.set_ylim(bottom=0)
-ax3.legend(); ax3.grid(True); fig3.tight_layout()
-fig3.savefig(f"./data/plot_frame_size_avg_W{W}.png", dpi=150)
+lineplot(x,
+         [wide["pps_Uplink"]*W, wide["pps_Downlink"]*W],
+         ["Uplink","Downlink"],
+         f"Frames per second per window (W = {W} s)",
+         "Frames per second (fps)",
+         f"./data/plot_fps_W{W}.png",
+         ylim0=True, x_end=x_end)
 
-# Inter-arrival times
-fig4, ax4 = plt.subplots()
-ax4.plot(wide["t_rel_start"], wide["iat_mean_Uplink"], label="Uplink")
-ax4.plot(wide["t_rel_start"], wide["iat_mean_Downlink"], label="Downlink")
-shade_sleep_fraction(ax4)
-ax4.set_title(f"Average inter-arrival time per window (W = {W} s)")
-ax4.set_xlabel("Relative time (s)")
-ax4.set_ylabel("Average inter-arrival time (s)")
-ax4.set_xlim(left=0)
-ax4.set_ylim(bottom=0)
-ax4.legend(); ax4.grid(True); fig4.tight_layout()
-fig4.savefig(f"./data/plot_iat_avg_W{W}.png", dpi=150)
+lineplot(x,
+         [wide["len_mean_Uplink"], wide["len_mean_Downlink"]],
+         ["Uplink","Downlink"],
+         f"Average frame size per window (W = {W} s)",
+         "Average frame size (bytes)",
+         f"./data/plot_frame_size_avg_W{W}.png",
+         ylim0=True, x_end=x_end)
 
-fig5, ax5 = plt.subplots()
-ax5.plot(wide["t_rel_start"], wide["iat_var_Uplink"], label="Uplink")
-ax5.plot(wide["t_rel_start"], wide["iat_var_Downlink"], label="Downlink")
-shade_sleep_fraction(ax5)
-ax5.set_title(f"Variance of inter-arrival time per window (W = {W} s)")
-ax5.set_xlabel("Relative time (s)")
-ax5.set_ylabel("Variance (s^2)")
-ax5.set_xlim(left=0)
-ax5.set_ylim(bottom=0)
-ax5.legend(); ax5.grid(True); fig5.tight_layout()
-fig5.savefig(f"./data/plot_iat_var_W{W}.png", dpi=150)
+lineplot(x,
+         [wide["iat_mean_Uplink"], wide["iat_mean_Downlink"]],
+         ["Uplink","Downlink"],
+         f"Average inter-arrival time per window (W = {W} s)",
+         "Average inter-arrival time (s)",
+         f"./data/plot_iat_avg_W{W}.png",
+         ylim0=True, x_end=x_end)
+
+lineplot(x,
+         [wide["iat_var_Uplink"], wide["iat_var_Downlink"]],
+         ["Uplink","Downlink"],
+         f"Variance of inter-arrival time per window (W = {W} s)",
+         "Variance (s^2)",
+         f"./data/plot_iat_var_W{W}.png",
+         ylim0=True, x_end=x_end)
 
 # RSSI
 rssi = wide["rssi_mean_Uplink"].where(~wide["rssi_mean_Uplink"].isna(), wide["rssi_mean_Downlink"])
-fig6, ax6 = plt.subplots()
-ax6.plot(wide["t_rel_start"], rssi, label="RSSI")
-ax6.set_title("Received Signal Strength Indicator (RSSI)")
-ax6.set_xlabel("Relative time (s)")
-ax6.set_ylabel("RSSI (dBm)")
-ax6.grid(True); fig6.tight_layout()
-fig6.savefig(f"./data/plot_rssi_W{W}.png", dpi=150)
+fig, ax = plt.subplots()
+ax.plot(x, rssi, label="RSSI"); ax.set_title("Received Signal Strength Indicator (RSSI)")
+ax.set_xlabel("Relative time (s)"); ax.set_ylabel("RSSI (dBm)")
+ax.set_xlim(left=0, right=x_end); ax.grid(True); fig.tight_layout()
+fig.savefig(f"./data/plot_rssi_W{W}.png", dpi=150)
 
-# QoS
-qos_frac = compute_qos_fractions(df, win_map)
-fig7, ax7 = plt.subplots()
-x = qos_frac["t_rel_start"].values
-order = ["AC_VO", "AC_VI", "AC_BK", "AC_BE"]
-color_map = {
-    "AC_VO": "#e57373",
-    "AC_VI": "#ffb74d",
-    "AC_BK": "#b2dfdb",
-    "AC_BE": "#90caf9",
-}
-label_map = {
-    "AC_VO": "Voice",
-    "AC_VI": "Video",
-    "AC_BK": "Background",
-    "AC_BE": "Best Effort",
-}
-ys      = [qos_frac[ac].values for ac in order]
-colors  = [color_map[ac]       for ac in order]
-labels  = [label_map[ac]       for ac in order]
-ax7.stackplot(x, *ys, labels=labels, colors=colors, alpha=0.95)
-shade_sleep_fraction(ax7)
-ax7.set_title(f"QoS Access Categories (W = {W} s)")
-ax7.set_xlabel("Relative time (s)")
-ax7.set_ylabel("Fraction of frames")
-ax7.set_xlim(left=0, right=t_max - t0)   # finisce dove finisce la cattura
-ax7.set_ylim(bottom=0, top=1)
-ax7.legend(loc="upper right", ncol=2, fontsize=9)
-ax7.grid(True, axis="y", alpha=0.3)
-fig7.tight_layout()
-fig7.savefig(f"./data/plot_qos_composition_W{W}.png", dpi=150)
+# QoS stack
+order = ["AC_VO","AC_VI","AC_BK","AC_BE"]
+colors = {"AC_VO":"#e57373","AC_VI":"#ffb74d","AC_BK":"#b2dfdb","AC_BE":"#90caf9"}
+labels = {"AC_VO":"Voice","AC_VI":"Video","AC_BK":"Background","AC_BE":"Best Effort"}
+fig, ax = plt.subplots()
+ax.stackplot(qfrac["t_rel_start"].values,
+             *[qfrac[ac].values for ac in order],
+             labels=[labels[a] for a in order],
+             colors=[colors[a] for a in order], alpha=0.95)
+shade(ax)
+ax.set_title(f"QoS Access Categories (W = {W} s)")
+ax.set_xlabel("Relative time (s)"); ax.set_ylabel("Fraction of frames")
+ax.set_xlim(left=0, right=x_end); ax.set_ylim(0,1)
+ax.legend(loc="upper right", ncol=2, fontsize=9); ax.grid(True, axis="y", alpha=0.3)
+fig.tight_layout(); fig.savefig(f"./data/plot_qos_composition_W{W}.png", dpi=150)
 
 # SNR
 snr = wide["snr_mean_Uplink"].where(~wide["snr_mean_Uplink"].isna(), wide["snr_mean_Downlink"])
-fig8, ax8 = plt.subplots()
-ax8.plot(wide["t_rel_start"], snr, label="SNR")
-ax8.set_title("Signal-to-Noise Ratio")
-ax8.set_xlabel("Relative time (s)")
-ax8.set_ylabel("SNR (dB)")
-ax8.set_xlim(left=0, right=t_max - t0)
-ax8.set_ylim(bottom=0)
-ax8.legend(); ax8.grid(True); fig8.tight_layout()
-fig8.savefig(f"./data/plot_snr_W{W}.png", dpi=150)
+fig, ax = plt.subplots()
+ax.plot(x, snr, label="SNR"); ax.set_title("Signal-to-Noise Ratio")
+ax.set_xlabel("Relative time (s)"); ax.set_ylabel("SNR (dB)")
+ax.set_xlim(left=0, right=x_end); ax.set_ylim(bottom=0)
+ax.legend(); ax.grid(True); fig.tight_layout()
+fig.savefig(f"./data/plot_snr_W{W}.png", dpi=150)
 
 print("Plots saved in ./data")
-
