@@ -153,9 +153,9 @@ These metrics highlight the difference between steady high-throughput traffic an
 
 ### Quality of Service
 
-<div style="text-align: center;">
-<img src="./img/plot_qos_composition_W15.png" width="250" />
-</div>
+<p align="center">
+  <img src="./img/plot_qos_composition_W15.png" width="400"/>
+</p>
 
 The plot illustrates the distribution of QoS access categories over time.
 - Best Effort (blue) dominates most of the capture, representing general web traffic.
@@ -183,9 +183,9 @@ This result could be improved by collecting more balanced data across all activi
 
 ### Confusion Matrix
 
-<div style="text-align: center;">
-<img src="./img/confusion_matrix_W15.png" width="250" />
-</div>
+<p align="center">
+  <img src="./img/confusion_matrix_W15.png" width="400"/>
+</p>
 
 The confusion matrix shows that the model is able to clearly distinguish streaming and speedtest sessions, which are recognized with high accuracy. 
 
