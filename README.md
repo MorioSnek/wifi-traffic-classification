@@ -34,7 +34,7 @@ The project is structured as follows:
 
 ```.
 wifi-traffic-classification/
-├── data/
+├── img/
 │   ├── plot_iat_avg_W15.png
 │   ├── plot_iat_var_W15.png
 │   ├── plot_pkt_size_avg_W15.png
@@ -63,9 +63,10 @@ wifi-traffic-classification/
 ```
 
 The folders respect the following logic:
-- `data/`: contains all the data files, mostly the generated plots.
-- `private/`: contains sensitive data that will not be shared publicly. Contains the original capture and its processing results. Can be requested by the course instructor.
+- `img/`: contains all the generated plot files.
 - `src/`: contains the source code for the project, including any scripts or modules used for analysis and visualization.
+- `models/`: contains the output dedicated to the machine learning part.
+- `private/`: contains sensitive data that will not be shared publicly. Contains the original capture and its processing results. Can be requested by the course instructor.
 - `requirements.txt`: lists the Python packages required to run the project.
 
 ## Capture Processing
